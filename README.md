@@ -233,3 +233,129 @@ Access metrics at:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Docker Deployment
+
+The application is containerized using Docker and orchestrated with Docker Compose. The setup includes three services:
+- API server (FastAPI)
+- Celery workers
+- Redis server
+
+### Prerequisites
+
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+- 6GB+ available RAM
+- 20GB+ available disk space
+
+### Quick Start
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd face-verification-api
+   ```
+
+2. Build and start the containers:
+   ```bash
+   docker-compose up --build -d
+   ```
+
+3. Check service status:
+   ```bash
+   docker-compose ps
+   ```
+
+4. View logs:
+   ```bash
+   # All services
+   docker-compose logs -f
+
+   # Specific service
+   docker-compose logs -f api
+   docker-compose logs -f worker
+   ```
+
+### Container Configuration
+
+Each service can be configured through environment variables in docker-compose.yml:
+
+#### API and Worker Services
+```yaml
+environment:
+  - REDIS_URL=redis://redis:6379/0
+  - MAX_WORKERS=1
+  - WORKER_MEMORY_LIMIT_MB=2048
+  - MAX_IMAGE_SIZE_MB=10
+  - MAX_IMAGE_DIMENSION=1920
+  - COSINE_SIMILARITY_THRESHOLD=0.7
+  - EUCLIDEAN_DISTANCE_THRESHOLD=0.8
+```
+
+#### Resource Limits
+Each container has defined resource limits:
+- API: 1-3GB RAM
+- Worker: 1-3GB RAM
+- Redis: 512MB-1GB RAM
+
+### Health Checks
+
+All services include health checks:
+- API: HTTP endpoint check
+- Worker: Celery ping check
+- Redis: Redis ping check
+
+### Production Deployment
+
+For production deployment, consider:
+
+1. Using a proper reverse proxy (e.g., Nginx):
+   ```nginx
+   location / {
+       proxy_pass http://api:8000;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+   }
+   ```
+
+2. Setting up monitoring:
+   ```bash
+   # Install monitoring stack
+   docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+   ```
+
+3. Scaling workers:
+   ```bash
+   docker-compose up -d --scale worker=3
+   ```
+
+4. Using Docker Swarm or Kubernetes for orchestration
+
+### Troubleshooting
+
+1. Container won't start:
+   ```bash
+   # Check logs
+   docker-compose logs <service-name>
+   
+   # Verify resource limits
+   docker stats
+   ```
+
+2. Worker not processing tasks:
+   ```bash
+   # Check Celery status
+   docker-compose exec worker celery -A app.worker:celery_app status
+   
+   # Inspect active tasks
+   docker-compose exec worker celery -A app.worker:celery_app inspect active
+   ```
+
+3. Redis connection issues:
+   ```bash
+   # Check Redis connectivity
+   docker-compose exec redis redis-cli ping
+   
+   # Monitor Redis commands
+   docker-compose exec redis redis-cli monitor
+   ```
