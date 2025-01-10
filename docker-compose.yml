@@ -1,0 +1,123 @@
+version: '3.8'
+
+x-common-variables: &common-variables
+  REDIS_URL: redis://redis:6379/0
+  MAX_WORKERS: 1
+  WORKER_MEMORY_LIMIT_MB: 2048
+  MAX_IMAGE_SIZE_MB: 10
+  MAX_IMAGE_DIMENSION: 1920
+  COSINE_SIMILARITY_THRESHOLD: 0.7
+  EUCLIDEAN_DISTANCE_THRESHOLD: 0.8
+  MAX_EUCLIDEAN_DISTANCE: 2.0
+  MIN_CONFIDENCE_THRESHOLD: 0.5
+  PYTHONPATH: /app
+
+x-common-build: &common-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  networks:
+    - face-verification-network
+
+services:
+  api:
+    <<: *common-build
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes:
+      - ./app:/app/app
+      - ./uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-variables
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    <<: *common-build
+    command: celery -A app.worker:celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./app:/app/app
+      - ./uploads:/app/uploads
+    environment:
+      <<: *common-variables
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.worker:celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:6.2-alpine
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - face-verification-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  face-verification-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
